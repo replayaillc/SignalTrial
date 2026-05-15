@@ -49,6 +49,12 @@ npm run smoke
 
 The smoke test exercises the JSONL store without launching Electron.
 
+## License
+
+SignalTrail is available for personal, educational, research, evaluation, and
+other non-commercial use. Commercial use requires prior written permission from
+ReplayAI LLC. See `LICENSE` for details.
+
 ## Package For macOS
 
 Install the optional packager when you are ready to build a distributable app:
