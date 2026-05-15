@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="SignalTrail logo">
+  <defs>
+    <radialGradient id="g" cx="34%" cy="24%" r="82%">
+      <stop offset="0" stop-color="#6ffbbe"/>
+      <stop offset="0.48" stop-color="#10b981"/>
+      <stop offset="1" stop-color="#006c49"/>
+    </radialGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <circle cx="128" cy="128" r="118" fill="url(#g)"/>
+  <path
+    d="M53 173c39-51 113-35 112-87-.1-27-36-31-58-44 39 9 85 14 100 55 18 50-40 72-77 100-20 15-30 29-33 47"
+    fill="none"
+    stroke="#baffdc"
+    stroke-linecap="round"
+    stroke-width="12"
+    opacity="0.78"
+  />
+  <path
+    d="M72 205c30-68 118-61 119-126"
+    fill="none"
+    stroke="#6ffbbe"
+    stroke-linecap="round"
+    stroke-width="10"
+    opacity="0.42"
+  />
+  <path
+    d="M142 38c-38 6-61 21-66 43-7 33 62 31 73 68"
+    fill="none"
+    stroke="#dcffe9"
+    stroke-linecap="round"
+    stroke-width="9"
+    opacity="0.82"
+  />
+  <g filter="url(#glow)">
+    <circle cx="55" cy="174" r="17" fill="#dcffe9"/>
+    <circle cx="149" cy="149" r="13" fill="#dcffe9"/>
+    <circle cx="199" cy="88" r="11" fill="#dcffe9"/>
+    <circle cx="153" cy="39" r="8" fill="#dcffe9"/>
+  </g>
+</svg>

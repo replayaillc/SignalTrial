@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' file: blob:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none';"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SignalTrail</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="SignalTrail navigation">
+        <div class="brand">
+          <img class="brand-mark" src="./assets/signaltrail-logo.svg" alt="" aria-hidden="true" />
+          <div>
+            <strong>SignalTrail</strong>
+            <span>Recorder Suite</span>
+          </div>
+        </div>
+
+        <nav class="side-nav" aria-label="Primary">
+          <button class="nav-item active" id="nav-recorder" type="button" data-view="recorder">
+            <span aria-hidden="true">REC</span>
+            Recorder
+          </button>
+          <button class="nav-item" id="nav-sessions" type="button" data-view="sessions">
+            <span aria-hidden="true">HIS</span>
+            Saved Sessions
+          </button>
+          <button class="nav-item muted" type="button" disabled>
+            <span aria-hidden="true">SET</span>
+            Settings
+          </button>
+        </nav>
+
+        <div class="sidebar-settings">
+          <label class="field">
+            <span>Keyframe interval</span>
+            <select id="interval-select">
+              <option value="0">Off</option>
+              <option value="3000">Every 3s</option>
+              <option value="5000" selected>Every 5s</option>
+              <option value="15000">Every 15s</option>
+              <option value="30000">Every 30s</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Video format</span>
+            <select id="video-select">
+              <option value="on" selected>WebM (Optimized)</option>
+              <option value="off">Preview only</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="sidebar-help">
+          <span>Help</span>
+          <span>Documentation</span>
+        </div>
+
+        <div class="storage-panel">
+          <span>Local Database</span>
+          <strong id="database-path">Loading...</strong>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Live Capture</p>
+            <h1 id="view-title">System Recorder</h1>
+          </div>
+          <div class="status-cluster">
+            <div class="display-pill">Display 1</div>
+            <div class="status-wrap">
+              <span class="status-pill" id="recording-status">Idle</span>
+              <span class="timer" id="duration">00:00</span>
+            </div>
+          </div>
+        </header>
+
+        <section class="view active" id="recorder-view" data-view-panel="recorder">
+          <div class="recorder-grid">
+            <div class="left-column">
+              <section class="preview-panel browser-frame" aria-label="Live screen preview">
+                <div class="browser-bar">
+                  <div class="traffic-lights" aria-hidden="true">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </div>
+                  <strong>Stream Preview</strong>
+                  <span id="preview-status">Ready</span>
+                </div>
+                <div class="screen-stage">
+                  <video id="screen-preview" autoplay muted playsinline></video>
+                  <div class="preview-empty" id="preview-empty">
+                    <div class="empty-icon" aria-hidden="true">OFF</div>
+                    <strong>Feed is currently inactive</strong>
+                    <span>Start a new recording session to begin capturing visual signals.</span>
+                  </div>
+                  <div class="recording-dot" aria-hidden="true"></div>
+                </div>
+              </section>
+
+              <section class="event-panel inline-events" aria-label="Playback action data">
+                <div class="section-heading">
+                  <h2>Synced Action JSON</h2>
+                  <span id="event-count">0 recorded</span>
+                </div>
+                <ol id="event-list" class="event-list"></ol>
+              </section>
+
+              <section class="metrics-grid" aria-label="Recording metrics">
+                <article class="metric">
+                  <span>Signals</span>
+                  <strong id="mouse-count">0</strong>
+                </article>
+                <article class="metric">
+                  <span>Frames</span>
+                  <strong id="screenshot-count">0</strong>
+                </article>
+                <article class="metric">
+                  <span>Video</span>
+                  <strong id="video-size">0 KB</strong>
+                </article>
+                <article class="metric">
+                  <span>Chunks</span>
+                  <strong id="chunk-count">0</strong>
+                </article>
+              </section>
+
+              <section class="context-card" aria-label="Active context">
+                <div class="section-heading">
+                  <h2>Active Context</h2>
+                  <span id="last-event">Standby</span>
+                </div>
+                <div class="context-grid">
+                  <div>
+                    <span>Primary Application</span>
+                    <strong id="active-app">Unknown</strong>
+                  </div>
+                  <div>
+                    <span>Active Window</span>
+                    <strong id="active-window">Unknown</strong>
+                  </div>
+                  <div class="wide">
+                    <span>Target URL</span>
+                    <strong id="active-url">Not available</strong>
+                  </div>
+                  <div class="wide">
+                    <span>Output Destination</span>
+                    <strong id="session-path">No active session</strong>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <aside class="right-column" aria-label="Recording controls">
+              <section class="annotation-panel">
+                <label class="field">
+                  <span>Goal / Task</span>
+                  <textarea id="task-input" rows="5" placeholder="What are you recording?"></textarea>
+                </label>
+                <label class="field">
+                  <span>Outcome Status</span>
+                  <select id="outcome-select">
+                    <option value="unknown" selected>Pending evaluation</option>
+                    <option value="success">Successfully Completed</option>
+                    <option value="partial">Partially Completed</option>
+                    <option value="failed">Failed / Error</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Observations</span>
+                  <textarea id="notes-input" rows="4" placeholder="Notes for data labeling..."></textarea>
+                </label>
+              </section>
+
+              <section class="control-panel">
+                <button class="primary" id="start-button" type="button">Begin Recording</button>
+                <div class="control-split">
+                  <button id="stop-button" type="button" disabled>End</button>
+                  <button id="screenshot-button" type="button" disabled>Snapshot</button>
+                </div>
+              </section>
+
+              <section class="saved-panel compact" aria-label="Recent sessions">
+                <div class="section-heading">
+                  <h2>Recent Sessions</h2>
+                  <button class="ghost" id="refresh-button" type="button">Refresh</button>
+                </div>
+                <ol class="session-list" id="session-list"></ol>
+              </section>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view" id="sessions-view" data-view-panel="sessions">
+          <div class="sessions-grid">
+            <section class="saved-panel library" aria-label="Saved sessions">
+              <div class="section-heading">
+                <h2>Saved</h2>
+                <button class="ghost mirror-refresh" type="button">Refresh</button>
+              </div>
+              <div class="session-list-mount"></div>
+              <div class="storage-panel inline-storage">
+                <span>Database Location</span>
+                <strong id="database-path-copy">Loading...</strong>
+              </div>
+            </section>
+
+            <section class="detail-panel" aria-label="Selected session details">
+              <div class="detail-header">
+                <h2 id="detail-title">Selected Session</h2>
+                <div>
+                  <button class="ghost" id="reveal-button" type="button" disabled>Reveal</button>
+                  <button class="export-button" type="button" disabled>Export WebM</button>
+                </div>
+              </div>
+
+              <div class="thumb-wrap">
+                <video id="session-video" controls preload="metadata"></video>
+                <img id="session-thumb" alt="" />
+                <div class="thumb-empty" id="thumb-empty">
+                  <strong>No saved frame yet</strong>
+                  <span>Select a session with captured screenshots.</span>
+                </div>
+              </div>
+
+              <dl class="detail-stats">
+                <div>
+                  <dt>Started</dt>
+                  <dd id="detail-started">--</dd>
+                </div>
+                <div>
+                  <dt>Duration</dt>
+                  <dd id="detail-duration">--</dd>
+                </div>
+                <div>
+                  <dt>File Size</dt>
+                  <dd id="detail-video">--</dd>
+                </div>
+                <div>
+                  <dt>Events</dt>
+                  <dd id="detail-events">--</dd>
+                </div>
+                <div>
+                  <dt>Task</dt>
+                  <dd id="detail-task">--</dd>
+                </div>
+                <div>
+                  <dt>Outcome</dt>
+                  <dd id="detail-outcome">--</dd>
+                </div>
+              </dl>
+            </section>
+          </div>
+        </section>
+
+      </main>
+    </div>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>
