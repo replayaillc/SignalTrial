@@ -1,4 +1,5 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import fs from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -10,6 +11,7 @@ const {
   app,
   BrowserWindow,
   desktopCapturer,
+  dialog,
   ipcMain,
   nativeImage,
   screen,
@@ -22,11 +24,21 @@ const __dirname = path.dirname(__filename);
 const execFileAsync = promisify(execFile);
 const logoPath = path.join(__dirname, '../renderer/assets/signaltrail-logo.svg');
 const macIconPath = path.join(__dirname, '../renderer/assets/signaltrail-logo.icns');
+const keyboardMonitorSourcePath = path.join(__dirname, 'keyboard-monitor.swift');
+const nativeKeyboardMonitorPath = path.join(__dirname, '../../build/Release/keyboard_monitor.node');
 
 app.setName('SignalTrail');
 
 let mainWindow;
 let recorderStore;
+let keyboardMonitorProcess = null;
+let keyboardMonitorBuffer = '';
+let keyboardMonitorBinaryPath = null;
+let nativeKeyboardMonitor = null;
+let nativeKeyboardMonitorRunning = false;
+let keyboardPermissionPromptOpen = false;
+let browserPermissionPromptOpen = false;
+const browserPermissionPromptsShown = new Set();
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -391,6 +403,310 @@ function withSessionThumbnail(sessionRecord) {
   };
 }
 
+function loadNativeKeyboardMonitor() {
+  if (process.platform !== 'darwin') {
+    return null;
+  }
+
+  if (nativeKeyboardMonitor) {
+    return nativeKeyboardMonitor;
+  }
+
+  try {
+    nativeKeyboardMonitor = require(nativeKeyboardMonitorPath);
+    return nativeKeyboardMonitor;
+  } catch (error) {
+    console.warn(`Native keyboard monitor unavailable: ${error.message}`);
+    return null;
+  }
+}
+
+async function ensureKeyboardMonitorBinary() {
+  if (process.platform !== 'darwin') {
+    return null;
+  }
+
+  const helperDir = path.join(app.getPath('userData'), 'helpers');
+  const binaryPath = path.join(helperDir, 'signaltrail-keyboard-monitor');
+
+  if (keyboardMonitorBinaryPath === binaryPath) {
+    return binaryPath;
+  }
+
+  await fs.mkdir(helperDir, { recursive: true });
+  const [sourceStat, binaryStat] = await Promise.all([
+    fs.stat(keyboardMonitorSourcePath),
+    fs.stat(binaryPath).catch(() => null)
+  ]);
+  const needsCompile = !binaryStat || sourceStat.mtimeMs > binaryStat.mtimeMs;
+
+  if (needsCompile) {
+    await execFileAsync('/usr/bin/xcrun', ['swiftc', keyboardMonitorSourcePath, '-o', binaryPath], {
+      timeout: 30_000,
+      maxBuffer: 1024 * 1024
+    });
+    await execFileAsync(
+      '/usr/bin/codesign',
+      ['--force', '--sign', '-', '--identifier', 'com.replayai.signaltrail.keyboard-monitor', binaryPath],
+      {
+        timeout: 30_000,
+        maxBuffer: 1024 * 1024
+      }
+    );
+  }
+
+  keyboardMonitorBinaryPath = binaryPath;
+  return binaryPath;
+}
+
+async function appendKeyboardMonitorEvent(payload) {
+  try {
+    const record = await recorderStore.appendEvent('keyboard', payload);
+
+    if (record && mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('recorder:event-appended', record);
+    }
+
+    if (payload?.kind === 'monitor-status' && payload.ok === false) {
+      showKeyboardPermissionPrompt(payload);
+    }
+  } catch (error) {
+    console.error(`Failed to append keyboard event: ${error.message}`);
+  }
+}
+
+function showKeyboardPermissionPrompt(payload = {}) {
+  if (keyboardPermissionPromptOpen || !mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  keyboardPermissionPromptOpen = true;
+  dialog
+    .showMessageBox(mainWindow, {
+      type: 'warning',
+      title: 'Input Monitoring Permission Needed',
+      message: 'SignalTrail needs macOS Input Monitoring permission to capture global keyboard events.',
+      detail:
+        `${payload.message || payload.error || 'Keyboard capture is currently blocked.'}\n\n` +
+        'Open Input Monitoring and enable Electron/SignalTrail. If the native addon cannot load, the fallback helper can still be revealed and added manually.',
+      buttons: ['Open Input Monitoring', 'Reveal Fallback Helper', 'Open Accessibility Settings', 'Later'],
+      defaultId: 0,
+      cancelId: 3
+    })
+    .then(({ response }) => {
+      if (response === 0) {
+        shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent');
+      } else if (response === 1) {
+        const helperPath =
+          keyboardMonitorBinaryPath ??
+          path.join(app.getPath('userData'), 'helpers', 'signaltrail-keyboard-monitor');
+        shell.showItemInFolder(helperPath);
+      } else if (response === 2) {
+        shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
+      }
+    })
+    .finally(() => {
+      keyboardPermissionPromptOpen = false;
+    });
+}
+
+function showBrowserPermissionPrompt(appName, error) {
+  const browserName = browserApplicationName(appName);
+
+  if (
+    !browserName ||
+    browserPermissionPromptOpen ||
+    browserPermissionPromptsShown.has(browserName) ||
+    !mainWindow ||
+    mainWindow.isDestroyed()
+  ) {
+    return;
+  }
+
+  browserPermissionPromptOpen = true;
+  browserPermissionPromptsShown.add(browserName);
+  dialog
+    .showMessageBox(mainWindow, {
+      type: 'warning',
+      title: `${browserName} Automation Permission Needed`,
+      message: `SignalTrail needs macOS Automation permission to read the active ${browserName} tab title and URL.`,
+      detail:
+        `${error || 'Browser tab capture is currently blocked.'}\n\n` +
+        `Open Automation settings and allow Electron/SignalTrail to control ${browserName}.`,
+      buttons: ['Open Automation Settings', 'Later'],
+      defaultId: 0,
+      cancelId: 1
+    })
+    .then(({ response }) => {
+      if (response === 0) {
+        shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Automation');
+      }
+    })
+    .finally(() => {
+      browserPermissionPromptOpen = false;
+    });
+}
+
+function processKeyboardMonitorLine(line) {
+  const trimmed = line.trim();
+
+  if (!trimmed) {
+    return;
+  }
+
+  try {
+    appendKeyboardMonitorEvent(JSON.parse(trimmed));
+  } catch {
+    appendKeyboardMonitorEvent({
+      kind: 'monitor-output',
+      message: cleanText(trimmed, 1000)
+    });
+  }
+}
+
+async function startKeyboardMonitor() {
+  if (keyboardMonitorProcess || nativeKeyboardMonitorRunning || !recorderStore?.isRecording()) {
+    return;
+  }
+
+  if (process.platform !== 'darwin') {
+    appendKeyboardMonitorEvent({
+      kind: 'monitor-status',
+      ok: false,
+      unsupported: true,
+      platform: process.platform
+    });
+    return;
+  }
+
+  try {
+    const nativeMonitor = loadNativeKeyboardMonitor();
+
+    if (nativeMonitor) {
+      const result = nativeMonitor.start((payload) => {
+        appendKeyboardMonitorEvent({
+          ...payload,
+          source: 'native-addon'
+        });
+      });
+
+      if (result?.ok) {
+        nativeKeyboardMonitorRunning = true;
+        await appendKeyboardMonitorEvent({
+          kind: 'monitor-status',
+          ok: true,
+          message: result.alreadyRunning
+            ? 'Native keyboard monitor already running'
+            : 'Native keyboard monitor requested',
+          source: 'native-addon'
+        });
+        return;
+      }
+
+      await appendKeyboardMonitorEvent({
+        kind: 'monitor-status',
+        ok: false,
+        message: result?.message || 'Input Monitoring permission needed for Electron/SignalTrail.',
+        permissionNeeded: Boolean(result?.permissionNeeded),
+        source: 'native-addon'
+      });
+      showKeyboardPermissionPrompt({
+        message: result?.message || 'Input Monitoring permission needed for Electron/SignalTrail.'
+      });
+      return;
+    }
+
+    await appendKeyboardMonitorEvent({
+      kind: 'monitor-status',
+      ok: true,
+      phase: 'starting'
+    });
+    const binaryPath = await ensureKeyboardMonitorBinary();
+    await appendKeyboardMonitorEvent({
+      kind: 'monitor-status',
+      ok: true,
+      phase: 'compiled',
+      binaryPath
+    });
+    keyboardMonitorProcess = spawn(binaryPath, [], {
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    keyboardMonitorBuffer = '';
+
+    await appendKeyboardMonitorEvent({
+      kind: 'monitor-status',
+      ok: true,
+      phase: 'spawned'
+    });
+
+    keyboardMonitorProcess.stdout.on('data', (chunk) => {
+      keyboardMonitorBuffer += chunk.toString('utf8');
+      const lines = keyboardMonitorBuffer.split('\n');
+      keyboardMonitorBuffer = lines.pop() ?? '';
+      lines.forEach(processKeyboardMonitorLine);
+    });
+
+    keyboardMonitorProcess.stderr.on('data', (chunk) => {
+      appendKeyboardMonitorEvent({
+        kind: 'monitor-error',
+        message: cleanText(chunk.toString('utf8'), 1000)
+      });
+    });
+
+    keyboardMonitorProcess.on('error', (error) => {
+      appendKeyboardMonitorEvent({
+        kind: 'monitor-status',
+        ok: false,
+        phase: 'spawn-error',
+        error: cleanText(error?.message || String(error), 1000)
+      });
+    });
+
+    keyboardMonitorProcess.on('exit', (code, signal) => {
+      if (keyboardMonitorBuffer) {
+        processKeyboardMonitorLine(keyboardMonitorBuffer);
+        keyboardMonitorBuffer = '';
+      }
+
+      keyboardMonitorProcess = null;
+
+      if (recorderStore?.isRecording()) {
+        appendKeyboardMonitorEvent({
+          kind: 'monitor-exit',
+          code,
+          signal
+        });
+      }
+    });
+  } catch (error) {
+    appendKeyboardMonitorEvent({
+      kind: 'monitor-status',
+      ok: false,
+      error: cleanText(error?.message || String(error), 1000)
+    });
+  }
+}
+
+function stopKeyboardMonitor() {
+  if (nativeKeyboardMonitorRunning && nativeKeyboardMonitor) {
+    try {
+      nativeKeyboardMonitor.stop();
+    } catch (error) {
+      console.warn(`Failed to stop native keyboard monitor: ${error.message}`);
+    }
+
+    nativeKeyboardMonitorRunning = false;
+  }
+
+  if (!keyboardMonitorProcess) {
+    return;
+  }
+
+  keyboardMonitorProcess.kill('SIGTERM');
+  keyboardMonitorProcess = null;
+  keyboardMonitorBuffer = '';
+}
+
 function setupSecurityGuards() {
   app.on('web-contents-created', (_event, contents) => {
     contents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -429,6 +745,7 @@ function setupIpc() {
       initialContext,
       settings: safeSettings
     });
+    await startKeyboardMonitor();
 
     return {
       isRecording: true,
@@ -440,6 +757,7 @@ function setupIpc() {
 
   ipcMain.handle('recorder:stop', async (event, summary = {}) => {
     assertTrustedSender(event);
+    stopKeyboardMonitor();
     const session = await recorderStore.stopSession(normalizePayload(summary));
 
     return {
@@ -466,6 +784,23 @@ function setupIpc() {
     return capturePrimaryDisplay(trigger);
   });
 
+  ipcMain.handle('recorder:screenshot-frame', async (event, frame, metadata = {}) => {
+    assertTrustedSender(event);
+    const safeMetadata = normalizePayload(metadata);
+    const buffer = Buffer.from(frame);
+    const saved = await recorderStore.saveScreenshot(buffer, {
+      ...safeMetadata,
+      trigger: typeof safeMetadata.trigger === 'string' ? safeMetadata.trigger.slice(0, 64) : 'preview'
+    });
+
+    return {
+      ok: true,
+      ...saved,
+      width: safeMetadata.width,
+      height: safeMetadata.height
+    };
+  });
+
   ipcMain.handle('recorder:cursor', (event) => {
     assertTrustedSender(event);
     const point = screen.getCursorScreenPoint();
@@ -479,7 +814,18 @@ function setupIpc() {
 
   ipcMain.handle('recorder:active-context', async (event) => {
     assertTrustedSender(event);
-    return getActiveContext();
+    const context = await getActiveContext();
+
+    if (context?.browser?.permissionNeeded) {
+      showBrowserPermissionPrompt(context.app?.name, context.browser.error);
+    } else if (context?.permissionNeeded) {
+      showKeyboardPermissionPrompt({
+        message: 'Accessibility permission is needed to read the active app and window.',
+        error: context.error
+      });
+    }
+
+    return context;
   });
 
   ipcMain.handle('recorder:video-chunk', async (event, chunk, metadata = {}) => {
@@ -530,6 +876,42 @@ function setupIpc() {
       error
     };
   });
+
+  ipcMain.handle('recorder:reveal-session-file', async (event, id, fileKind) => {
+    assertTrustedSender(event);
+    const sessionRecord = recorderStore.getSession(id);
+
+    if (!sessionRecord) {
+      return {
+        ok: false,
+        reason: 'not-found'
+      };
+    }
+
+    const filePath =
+      fileKind === 'events'
+        ? sessionRecord.eventsPath
+        : fileKind === 'video'
+          ? sessionRecord.videoPath
+          : sessionRecord.dir;
+
+    shell.showItemInFolder(filePath);
+
+    return {
+      ok: true,
+      path: filePath
+    };
+  });
+
+  ipcMain.handle('recorder:reveal-database', (event) => {
+    assertTrustedSender(event);
+    shell.showItemInFolder(recorderStore.getDatabasePath());
+
+    return {
+      ok: true,
+      path: recorderStore.getDatabasePath()
+    };
+  });
 }
 
 setupSecurityGuards();
@@ -550,6 +932,8 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
+  stopKeyboardMonitor();
+
   if (process.platform !== 'darwin') {
     app.quit();
   }

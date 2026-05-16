@@ -37,16 +37,7 @@
         </nav>
 
         <div class="sidebar-settings">
-          <label class="field">
-            <span>Keyframe interval</span>
-            <select id="interval-select">
-              <option value="0">Off</option>
-              <option value="3000">Every 3s</option>
-              <option value="5000" selected>Every 5s</option>
-              <option value="15000">Every 15s</option>
-              <option value="30000">Every 30s</option>
-            </select>
-          </label>
+          <input id="interval-select" type="hidden" value="5000" />
 
           <label class="field">
             <span>Video format</span>
@@ -76,6 +67,7 @@
           </div>
           <div class="status-cluster">
             <div class="display-pill">Display 1</div>
+            <button class="top-stop-button" id="top-stop-button" type="button" disabled>Stop Recording</button>
             <div class="status-wrap">
               <span class="status-pill" id="recording-status">Idle</span>
               <span class="timer" id="duration">00:00</span>
@@ -219,6 +211,8 @@
                 <h2 id="detail-title">Selected Session</h2>
                 <div>
                   <button class="ghost" id="reveal-button" type="button" disabled>Reveal</button>
+                  <button class="ghost" id="events-button" type="button" disabled>Events JSON</button>
+                  <button class="ghost" id="video-file-button" type="button" disabled>Video File</button>
                   <button class="export-button" type="button" disabled>Export WebM</button>
                 </div>
               </div>

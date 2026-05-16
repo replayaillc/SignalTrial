@@ -311,6 +311,11 @@ h2 {
   padding: 14px;
 }
 
+.storage-panel:hover {
+  border-color: rgba(78, 222, 163, 0.45);
+  cursor: pointer;
+}
+
 .storage-panel strong,
 .context-grid strong {
   overflow-wrap: anywhere;
@@ -392,6 +397,23 @@ h2 {
   color: var(--muted);
   font-size: 13px;
   font-weight: 700;
+}
+
+.top-stop-button {
+  min-height: 40px;
+  border-color: rgba(255, 180, 171, 0.34);
+  border-radius: 999px;
+  background: rgba(255, 180, 171, 0.12);
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.top-stop-button:hover:not(:disabled) {
+  border-color: rgba(255, 180, 171, 0.7);
+  background: rgba(255, 180, 171, 0.18);
 }
 
 .status-pill,
@@ -848,6 +870,8 @@ h2 {
 
 .detail-header div {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 8px;
 }
 

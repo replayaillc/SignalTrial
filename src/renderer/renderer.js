@@ -1,8 +1,11 @@
 const startButton = document.querySelector('#start-button');
 const stopButton = document.querySelector('#stop-button');
+const topStopButton = document.querySelector('#top-stop-button');
 const screenshotButton = document.querySelector('#screenshot-button');
 const refreshButton = document.querySelector('#refresh-button');
 const revealButton = document.querySelector('#reveal-button');
+const eventsButton = document.querySelector('#events-button');
+const videoFileButton = document.querySelector('#video-file-button');
 const taskInput = document.querySelector('#task-input');
 const outcomeSelect = document.querySelector('#outcome-select');
 const notesInput = document.querySelector('#notes-input');
@@ -43,6 +46,7 @@ const compactSessionsPanel = document.querySelector('.saved-panel.compact');
 const sessionListMount = document.querySelector('.session-list-mount');
 const databasePathCopy = document.querySelector('#database-path-copy');
 const mirrorRefreshButton = document.querySelector('.mirror-refresh');
+const storagePanels = [...document.querySelectorAll('.storage-panel')];
 
 const state = {
   recording: false,
@@ -72,6 +76,7 @@ function setRecording(isRecording) {
   state.recording = isRecording;
   startButton.disabled = isRecording;
   stopButton.disabled = !isRecording;
+  topStopButton.disabled = !isRecording;
   screenshotButton.disabled = !isRecording;
   taskInput.disabled = isRecording;
   intervalSelect.disabled = isRecording;
@@ -189,6 +194,20 @@ function eventSummary(type, payload = {}) {
 
   if (type === 'mouse') {
     return `${payload.kind || 'mouse'} at ${payload.screenX}, ${payload.screenY}`;
+  }
+
+  if (type === 'keyboard') {
+    if (payload.kind === 'monitor-status') {
+      return payload.ok
+        ? 'Keyboard monitor started'
+        : payload.error || payload.message || 'Keyboard monitor unavailable';
+    }
+
+    if (payload.kind === 'monitor-error' || payload.kind === 'monitor-exit') {
+      return payload.message || JSON.stringify(payload);
+    }
+
+    return `${payload.kind || 'key'} ${payload.shortcut || payload.key || payload.keyCode}`;
   }
 
   if (type === 'frame') {
@@ -469,11 +488,26 @@ async function captureScreenshot(trigger = 'manual') {
   }
 
   try {
-    const result = await window.signalTrail.captureScreenshot({ trigger });
+    let result;
+
+    if (trigger === 'interval') {
+      result = await capturePreviewFrame(trigger, 'auto-preview-frame');
+    } else {
+      try {
+        result = await window.signalTrail.captureScreenshot({ trigger });
+      } catch (error) {
+        result = await capturePreviewFrame(trigger, error.message);
+      }
+    }
 
     if (!result.ok) {
-      addLog('frame-skipped', result);
-      return;
+      const fallback = await capturePreviewFrame(trigger, result.reason || 'desktop-capture-skipped');
+      if (!fallback.ok) {
+        addLog('frame-skipped', fallback);
+        return;
+      }
+
+      result = fallback;
     }
 
     state.screenshots += 1;
@@ -488,6 +522,50 @@ async function captureScreenshot(trigger = 'manual') {
   }
 }
 
+async function capturePreviewFrame(trigger, fallbackReason = '') {
+  if (!screenPreview.srcObject || !screenPreview.videoWidth || !screenPreview.videoHeight) {
+    return {
+      ok: false,
+      reason: fallbackReason || 'preview-unavailable'
+    };
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = screenPreview.videoWidth;
+  canvas.height = screenPreview.videoHeight;
+  const context = canvas.getContext('2d');
+
+  if (!context) {
+    return {
+      ok: false,
+      reason: 'canvas-unavailable'
+    };
+  }
+
+  context.drawImage(screenPreview, 0, 0, canvas.width, canvas.height);
+
+  const blob = await new Promise((resolve) => {
+    canvas.toBlob(resolve, 'image/png');
+  });
+
+  if (!blob) {
+    return {
+      ok: false,
+      reason: 'frame-encode-failed'
+    };
+  }
+
+  const buffer = await blob.arrayBuffer();
+  return window.signalTrail.saveScreenshotFrame(buffer, {
+    trigger,
+    width: canvas.width,
+    height: canvas.height,
+    sourceName: 'Live preview',
+    source: 'renderer-video-frame',
+    fallbackReason
+  });
+}
+
 function startAutoCapture() {
   const intervalMs = Number(intervalSelect.value);
 
@@ -495,6 +573,7 @@ function startAutoCapture() {
     return;
   }
 
+  window.setTimeout(() => captureScreenshot('interval'), 1000);
   state.autoCaptureTimer = window.setInterval(() => {
     captureScreenshot('interval');
   }, intervalMs);
@@ -588,7 +667,7 @@ async function startRecording() {
       task: {
         description: task
       },
-      autoScreenshotIntervalMs: Number(intervalSelect.value),
+      autoScreenshotIntervalMs: Number(intervalSelect.value) || 0,
       video: videoSelect.value
     });
 
@@ -604,7 +683,6 @@ async function startRecording() {
     startAutoCapture();
     startCursorTracking();
     startContextTracking();
-    captureScreenshot('session-start');
     renderSessionList(response.sessions);
     selectSession(response.session.id);
   } catch (error) {
@@ -625,7 +703,6 @@ async function stopRecording() {
   stopAutoCapture();
   stopCursorTracking();
   stopContextTracking();
-  await captureScreenshot('session-stop');
   await stopMediaRecorder();
 
   const elapsedMs = Date.now() - state.startedAt;
@@ -675,6 +752,8 @@ function renderSessionList(sessions = []) {
     detailTask.textContent = '--';
     detailOutcome.textContent = '--';
     revealButton.disabled = true;
+    eventsButton.disabled = true;
+    videoFileButton.disabled = true;
     resetPlayback();
     sessionThumb.removeAttribute('src');
     thumbWrap.classList.remove('has-image', 'has-video');
@@ -862,11 +941,17 @@ async function selectSession(id) {
   detailTask.textContent = detail.task?.description || '--';
   detailOutcome.textContent = detail.outcome?.status || '--';
   revealButton.disabled = false;
-  state.playbackEvents = detail.events ?? [];
-  state.playbackStartedAt = new Date(detail.startedAt).getTime();
-  renderStoredEvents(detail.events);
+  eventsButton.disabled = false;
+  videoFileButton.disabled = !detail.counts.videoBytes;
+  const isActiveRecording = state.recording || detail.status === 'recording';
 
-  if (!state.recording && detail.latestContext) {
+  if (!isActiveRecording) {
+    state.playbackEvents = detail.events ?? [];
+    state.playbackStartedAt = new Date(detail.startedAt).getTime();
+    renderStoredEvents(detail.events);
+  }
+
+  if (!isActiveRecording && detail.latestContext) {
     updateContextDisplay(detail.latestContext);
   }
 
@@ -878,7 +963,9 @@ async function selectSession(id) {
     thumbWrap.classList.remove('has-image');
   }
 
-  loadPlayback(detail);
+  if (!isActiveRecording) {
+    loadPlayback(detail);
+  }
 
   for (const button of sessionList.querySelectorAll('.session-item')) {
     button.classList.toggle('selected', button.dataset.sessionId === id);
@@ -887,6 +974,7 @@ async function selectSession(id) {
 
 startButton.addEventListener('click', startRecording);
 stopButton.addEventListener('click', stopRecording);
+topStopButton.addEventListener('click', stopRecording);
 screenshotButton.addEventListener('click', () => captureScreenshot('manual'));
 refreshButton.addEventListener('click', loadSessions);
 mirrorRefreshButton.addEventListener('click', loadSessions);
@@ -901,6 +989,22 @@ revealButton.addEventListener('click', () => {
     window.signalTrail.revealSession(state.selectedSessionId);
   }
 });
+eventsButton.addEventListener('click', () => {
+  if (state.selectedSessionId) {
+    window.signalTrail.revealSessionFile(state.selectedSessionId, 'events');
+  }
+});
+videoFileButton.addEventListener('click', () => {
+  if (state.selectedSessionId) {
+    window.signalTrail.revealSessionFile(state.selectedSessionId, 'video');
+  }
+});
+
+for (const panel of storagePanels) {
+  panel.addEventListener('click', () => window.signalTrail.revealDatabase());
+  panel.setAttribute('role', 'button');
+  panel.tabIndex = 0;
+}
 
 for (const button of navButtons) {
   button.addEventListener('click', () => switchView(button.dataset.view));
@@ -910,6 +1014,14 @@ document.addEventListener('mousemove', handleMouseMove, { passive: true });
 document.addEventListener('mousedown', handleMouseAction('mousedown'), { passive: true });
 document.addEventListener('mouseup', handleMouseAction('mouseup'), { passive: true });
 document.addEventListener('click', handleMouseAction('click'), { passive: true });
+
+window.signalTrail.onRecorderEvent((record) => {
+  if (!state.recording || !record?.type) {
+    return;
+  }
+
+  addLog(record.type, record.payload);
+});
 
 window.signalTrail.status().then(async (status) => {
   setRecording(status.isRecording);

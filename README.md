@@ -5,8 +5,9 @@ SignalTrail is a minimal Electron recorder app for collecting local computer-use
 - secure Electron defaults
 - live screen preview
 - WebM screen recording through browser `MediaRecorder`
-- screenshot keyframes through Electron `desktopCapturer`
+- optional manual snapshot frames for thumbnails or review
 - global cursor sampling plus in-app mouse/click telemetry
+- global macOS keyboard event capture when Accessibility/Input Monitoring permissions allow it
 - task and outcome labels for each recording
 - active app, window title, and browser URL/title context when macOS permissions allow it
 - append-only JSONL event storage per session
@@ -37,7 +38,7 @@ Each session folder contains:
 
 - `events.jsonl`: newline-delimited event records
 - `recording.webm`: screen recording when video is enabled
-- `screenshots/`: PNG screenshots captured manually or on an interval
+- `screenshots/`: optional PNG snapshots captured manually
 
 `database.json` indexes task text, outcome labels, counts, latest screenshot, latest context, and file paths.
 
@@ -99,3 +100,4 @@ On macOS:
 - Grant Screen Recording permission when prompted so the live preview and screenshots can capture the display.
 - Grant Automation permission for Electron/SignalTrail to read frontmost app and window metadata.
 - Grant browser automation permission if you want URL/title capture for Chrome, Edge, Brave, or Safari.
+- Grant Accessibility/Input Monitoring permission if you want keyboard events from other apps captured.
