@@ -30,14 +30,14 @@
             <span aria-hidden="true">HIS</span>
             Saved Sessions
           </button>
-          <button class="nav-item muted" type="button" disabled>
+          <button class="nav-item" id="nav-settings" type="button" data-view="settings">
             <span aria-hidden="true">SET</span>
             Settings
           </button>
         </nav>
 
         <div class="sidebar-settings">
-          <input id="interval-select" type="hidden" value="5000" />
+          <input id="interval-select" type="hidden" value="0" />
 
           <label class="field">
             <span>Video format</span>
@@ -67,6 +67,7 @@
           </div>
           <div class="status-cluster">
             <div class="display-pill">Display 1</div>
+            <button class="top-record-button" id="top-record-button" type="button">Record</button>
             <button class="top-stop-button" id="top-stop-button" type="button" disabled>Stop Recording</button>
             <div class="status-wrap">
               <span class="status-pill" id="recording-status">Idle</span>
@@ -252,6 +253,44 @@
                   <dd id="detail-outcome">--</dd>
                 </div>
               </dl>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="settings-view" data-view-panel="settings">
+          <div class="settings-grid">
+            <section class="settings-panel">
+              <div class="section-heading">
+                <h2>Storage</h2>
+                <span>Local Files</span>
+              </div>
+              <div class="settings-actions">
+                <button class="ghost" id="open-data-folder-button" type="button">Open Data Folder</button>
+                <button class="ghost" id="open-database-button" type="button">Reveal Database</button>
+              </div>
+              <div class="storage-panel inline-storage">
+                <span>SignalTrail Data Folder</span>
+                <strong id="settings-data-folder">Loading...</strong>
+              </div>
+              <p class="settings-note">
+                Recordings are stored as folders with video, screenshots, and synced action JSON.
+              </p>
+            </section>
+
+            <section class="settings-panel danger-zone">
+              <div class="section-heading">
+                <h2>Recordings Cleanup</h2>
+                <span id="settings-session-count">0 saved</span>
+              </div>
+              <div class="settings-actions">
+                <button class="ghost danger-action" id="delete-selected-button" type="button" disabled>
+                  Delete Selected
+                </button>
+                <button class="ghost danger-action" id="delete-all-button" type="button" disabled>
+                  Delete All Saved
+                </button>
+              </div>
+              <ol class="cleanup-list" id="cleanup-session-list"></ol>
             </section>
           </div>
         </section>

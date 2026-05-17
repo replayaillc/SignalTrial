@@ -10,8 +10,8 @@
     "rebuild:native": "electron-rebuild -f",
     "start": "electron .",
     "smoke": "node scripts/smoke.mjs",
-    "package:mac": "npx @electron/packager . SignalTrail --platform=darwin --arch=arm64,x64 --app-bundle-id=com.replayai.signaltrail --icon=src/renderer/assets/signaltrail-logo.icns --out=dist --overwrite",
-    "package:mac:dev": "npm run build:native && npx @electron/packager . SignalTrail --platform=darwin --arch=arm64 --app-bundle-id=com.replayai.signaltrail.dev --icon=src/renderer/assets/signaltrail-logo.icns --out=dist --overwrite"
+    "package:mac": "npx @electron/packager . SignalTrail --platform=darwin --arch=arm64,x64 --app-bundle-id=com.replayai.signaltrail --icon=src/renderer/assets/signaltrail-logo.icns --asar.unpack=\"**/keyboard-monitor.swift\" --out=dist --overwrite && node scripts/copy-packaged-native.mjs",
+    "package:mac:dev": "npm run build:native && npx @electron/packager . SignalTrail --platform=darwin --arch=arm64 --app-bundle-id=com.replayai.signaltrail.dev --icon=src/renderer/assets/signaltrail-logo.icns --asar.unpack=\"**/keyboard-monitor.swift\" --out=dist --overwrite && node scripts/copy-packaged-native.mjs"
   },
   "keywords": [
     "electron",

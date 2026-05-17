@@ -399,16 +399,31 @@ h2 {
   font-weight: 700;
 }
 
+.top-record-button,
 .top-stop-button {
   min-height: 40px;
-  border-color: rgba(255, 180, 171, 0.34);
   border-radius: 999px;
-  background: rgba(255, 180, 171, 0.12);
-  color: var(--danger);
   font-size: 12px;
   font-weight: 900;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.top-record-button {
+  border-color: rgba(78, 222, 163, 0.38);
+  background: rgba(78, 222, 163, 0.14);
+  color: var(--primary);
+}
+
+.top-record-button:hover:not(:disabled) {
+  border-color: rgba(78, 222, 163, 0.72);
+  background: rgba(78, 222, 163, 0.2);
+}
+
+.top-stop-button {
+  border-color: rgba(255, 180, 171, 0.34);
+  background: rgba(255, 180, 171, 0.12);
+  color: var(--danger);
 }
 
 .top-stop-button:hover:not(:disabled) {
@@ -470,7 +485,8 @@ h2 {
 .control-panel,
 .saved-panel,
 .detail-panel,
-.event-panel {
+.event-panel,
+.settings-panel {
   border: 1px solid rgba(60, 74, 66, 0.42);
   border-radius: 18px;
   background: var(--surface-container);
@@ -836,6 +852,79 @@ h2 {
   min-height: calc(100vh - 144px);
 }
 
+.settings-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 24px;
+  min-height: calc(100vh - 144px);
+}
+
+.settings-panel {
+  padding: 22px;
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.settings-note {
+  margin-top: 14px;
+  color: var(--subtle);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.danger-action {
+  border-color: rgba(255, 180, 171, 0.34);
+  color: var(--danger);
+}
+
+.cleanup-list {
+  display: grid;
+  gap: 10px;
+  max-height: calc(100vh - 280px);
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.cleanup-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  border: 1px solid rgba(60, 74, 66, 0.32);
+  border-radius: 14px;
+  background: rgba(9, 16, 12, 0.32);
+  padding: 13px;
+}
+
+.cleanup-item input {
+  margin-top: 3px;
+}
+
+.cleanup-item strong,
+.cleanup-item span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.cleanup-item strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.cleanup-item span {
+  margin-top: 4px;
+  color: var(--subtle);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .saved-panel.library,
 .detail-panel {
   padding: 22px;
@@ -962,7 +1051,8 @@ h2 {
 
 @media (max-width: 1280px) {
   .recorder-grid,
-  .sessions-grid {
+  .sessions-grid,
+  .settings-grid {
     grid-template-columns: 1fr;
   }
 

@@ -24,8 +24,15 @@ const __dirname = path.dirname(__filename);
 const execFileAsync = promisify(execFile);
 const logoPath = path.join(__dirname, '../renderer/assets/signaltrail-logo.svg');
 const macIconPath = path.join(__dirname, '../renderer/assets/signaltrail-logo.icns');
-const keyboardMonitorSourcePath = path.join(__dirname, 'keyboard-monitor.swift');
-const nativeKeyboardMonitorPath = path.join(__dirname, '../../build/Release/keyboard_monitor.node');
+const unpackedMainDir = __dirname.replace(
+  `${path.sep}app.asar`,
+  `${path.sep}app.asar.unpacked`
+);
+const keyboardMonitorSourcePath = path.join(unpackedMainDir, 'keyboard-monitor.swift');
+const nativeKeyboardMonitorPath = path.join(
+  unpackedMainDir,
+  '../../build/Release/keyboard_monitor.node'
+);
 
 app.setName('SignalTrail');
 
@@ -484,25 +491,24 @@ function showKeyboardPermissionPrompt(payload = {}) {
   dialog
     .showMessageBox(mainWindow, {
       type: 'warning',
-      title: 'Input Monitoring Permission Needed',
-      message: 'SignalTrail needs macOS Input Monitoring permission to capture global keyboard events.',
+      title: 'Input Monitoring Needed',
+      message: 'SignalTrail needs Input Monitoring permission for global keyboard capture.',
       detail:
-        `${payload.message || payload.error || 'Keyboard capture is currently blocked.'}\n\n` +
-        'Open Input Monitoring and enable Electron/SignalTrail. If the native addon cannot load, the fallback helper can still be revealed and added manually.',
-      buttons: ['Open Input Monitoring', 'Reveal Fallback Helper', 'Open Accessibility Settings', 'Later'],
+        `${payload.message || payload.error || 'macOS is blocking global keyboard events.'}\n\n` +
+        'Open Input Monitoring, enable SignalTrail, then stop and start recording again.',
+      buttons: ['Open Input Monitoring', 'Reveal SignalTrail App', 'Later'],
       defaultId: 0,
-      cancelId: 3
+      cancelId: 2
     })
     .then(({ response }) => {
       if (response === 0) {
         shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent');
       } else if (response === 1) {
-        const helperPath =
-          keyboardMonitorBinaryPath ??
-          path.join(app.getPath('userData'), 'helpers', 'signaltrail-keyboard-monitor');
-        shell.showItemInFolder(helperPath);
-      } else if (response === 2) {
-        shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
+        const appBundlePath =
+          process.platform === 'darwin'
+            ? path.dirname(path.dirname(path.dirname(process.execPath)))
+            : process.execPath;
+        shell.showItemInFolder(appBundlePath);
       }
     })
     .finally(() => {
@@ -839,6 +845,31 @@ function setupIpc() {
     return recorderStore.listSessions().map(withSessionThumbnail);
   });
 
+  ipcMain.handle('recorder:delete-sessions', async (event, ids = []) => {
+    assertTrustedSender(event);
+    const safeIds = Array.isArray(ids) ? ids.filter((id) => typeof id === 'string') : [];
+    const result = await recorderStore.deleteSessions(safeIds);
+
+    return {
+      ...result,
+      sessions: recorderStore.listSessions().map(withSessionThumbnail)
+    };
+  });
+
+  ipcMain.handle('recorder:delete-all-sessions', async (event) => {
+    assertTrustedSender(event);
+    const ids = recorderStore
+      .listSessions()
+      .filter((session) => session.status !== 'recording')
+      .map((session) => session.id);
+    const result = await recorderStore.deleteSessions(ids);
+
+    return {
+      ...result,
+      sessions: recorderStore.listSessions().map(withSessionThumbnail)
+    };
+  });
+
   ipcMain.handle('recorder:session-detail', async (event, id) => {
     assertTrustedSender(event);
     const detail = await recorderStore.getSessionDetail(id);
@@ -910,6 +941,17 @@ function setupIpc() {
     return {
       ok: true,
       path: recorderStore.getDatabasePath()
+    };
+  });
+
+  ipcMain.handle('recorder:reveal-data-folder', async (event) => {
+    assertTrustedSender(event);
+    const error = await shell.openPath(recorderStore.getRootDir());
+
+    return {
+      ok: !error,
+      error,
+      path: recorderStore.getRootDir()
     };
   });
 }

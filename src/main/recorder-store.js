@@ -81,6 +81,10 @@ export class RecorderStore {
     return this.databasePath;
   }
 
+  getRootDir() {
+    return this.rootDir;
+  }
+
   getDatabase() {
     return clone(this.database);
   }
@@ -196,6 +200,39 @@ export class RecorderStore {
     this.currentSession = null;
     await this.persistDatabase();
     return sessionInfo;
+  }
+
+  async deleteSessions(ids = []) {
+    const requestedIds = new Set(ids.filter((id) => typeof id === 'string'));
+    const activeId = this.currentSession?.id ?? null;
+    const deleted = [];
+    const skipped = [];
+
+    if (!requestedIds.size) {
+      return { deleted, skipped };
+    }
+
+    const remaining = [];
+
+    for (const session of this.database.sessions) {
+      if (!requestedIds.has(session.id)) {
+        remaining.push(session);
+        continue;
+      }
+
+      if (session.id === activeId || session.status === 'recording') {
+        remaining.push(session);
+        skipped.push({ id: session.id, reason: 'active-recording' });
+        continue;
+      }
+
+      await fs.rm(session.dir, { recursive: true, force: true });
+      deleted.push(session.id);
+    }
+
+    this.database.sessions = remaining;
+    await this.persistDatabase();
+    return { deleted, skipped };
   }
 
   async appendEvent(type, payload = {}) {

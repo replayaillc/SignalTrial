@@ -1,5 +1,6 @@
 const startButton = document.querySelector('#start-button');
 const stopButton = document.querySelector('#stop-button');
+const topRecordButton = document.querySelector('#top-record-button');
 const topStopButton = document.querySelector('#top-stop-button');
 const screenshotButton = document.querySelector('#screenshot-button');
 const refreshButton = document.querySelector('#refresh-button');
@@ -47,6 +48,13 @@ const sessionListMount = document.querySelector('.session-list-mount');
 const databasePathCopy = document.querySelector('#database-path-copy');
 const mirrorRefreshButton = document.querySelector('.mirror-refresh');
 const storagePanels = [...document.querySelectorAll('.storage-panel')];
+const settingsDataFolder = document.querySelector('#settings-data-folder');
+const settingsSessionCount = document.querySelector('#settings-session-count');
+const cleanupSessionList = document.querySelector('#cleanup-session-list');
+const openDataFolderButton = document.querySelector('#open-data-folder-button');
+const openDatabaseButton = document.querySelector('#open-database-button');
+const deleteSelectedButton = document.querySelector('#delete-selected-button');
+const deleteAllButton = document.querySelector('#delete-all-button');
 
 const state = {
   recording: false,
@@ -69,12 +77,15 @@ const state = {
   videoChunks: 0,
   chunkWrites: [],
   playbackEvents: [],
-  playbackStartedAt: null
+  playbackStartedAt: null,
+  sessions: [],
+  cleanupSelection: new Set()
 };
 
 function setRecording(isRecording) {
   state.recording = isRecording;
   startButton.disabled = isRecording;
+  topRecordButton.disabled = isRecording;
   stopButton.disabled = !isRecording;
   topStopButton.disabled = !isRecording;
   screenshotButton.disabled = !isRecording;
@@ -262,6 +273,12 @@ function switchView(viewName) {
     return;
   }
 
+  if (viewName === 'settings') {
+    viewTitle.textContent = 'Settings';
+    compactSessionsPanel.append(sessionList);
+    return;
+  }
+
   viewTitle.textContent = 'System Recorder';
   compactSessionsPanel.append(sessionList);
 }
@@ -358,6 +375,38 @@ function handleMouseAction(kind) {
     state.mouseEvents += 1;
     updateCounters();
     recordEvent('mouse', mousePayload(kind, event));
+  };
+}
+
+function keyboardPayload(kind, event) {
+  const modifiers = [];
+
+  if (event.metaKey) modifiers.push('command');
+  if (event.ctrlKey) modifiers.push('control');
+  if (event.altKey) modifiers.push('option');
+  if (event.shiftKey) modifiers.push('shift');
+
+  return {
+    kind,
+    key: event.key,
+    code: event.code,
+    keyCode: event.keyCode,
+    characters: event.key?.length === 1 ? event.key : '',
+    modifiers,
+    shortcut: [...modifiers, event.key].filter(Boolean).join('+'),
+    isRepeat: event.repeat,
+    source: 'renderer-local',
+    target: targetSummary(event.target)
+  };
+}
+
+function handleKeyboardAction(kind) {
+  return (event) => {
+    if (!state.recording) {
+      return;
+    }
+
+    recordEvent('keyboard', keyboardPayload(kind, event));
   };
 }
 
@@ -573,7 +622,6 @@ function startAutoCapture() {
     return;
   }
 
-  window.setTimeout(() => captureScreenshot('interval'), 1000);
   state.autoCaptureTimer = window.setInterval(() => {
     captureScreenshot('interval');
   }, intervalMs);
@@ -683,7 +731,9 @@ async function startRecording() {
     startAutoCapture();
     startCursorTracking();
     startContextTracking();
+    state.sessions = response.sessions;
     renderSessionList(response.sessions);
+    renderCleanupSessions(response.sessions);
     selectSession(response.session.id);
   } catch (error) {
     stopAutoCapture();
@@ -731,7 +781,9 @@ async function stopRecording() {
     video: formatBytes(state.videoBytes)
   });
 
+  state.sessions = response.sessions;
   renderSessionList(response.sessions);
+  renderCleanupSessions(response.sessions);
   await selectSession(response.session?.id ?? state.activeSessionId);
   state.activeSessionId = null;
 }
@@ -798,6 +850,64 @@ function renderSessionList(sessions = []) {
     row.append(button);
     sessionList.append(row);
   }
+}
+
+function updateDeleteButtons() {
+  deleteSelectedButton.disabled = state.cleanupSelection.size === 0;
+  deleteAllButton.disabled = !state.sessions.some((session) => session.status !== 'recording');
+}
+
+function renderCleanupSessions(sessions = []) {
+  cleanupSessionList.replaceChildren();
+  const deletableSessions = sessions.filter((session) => session.status !== 'recording');
+  settingsSessionCount.textContent = `${deletableSessions.length} saved`;
+
+  for (const id of [...state.cleanupSelection]) {
+    if (!deletableSessions.some((session) => session.id === id)) {
+      state.cleanupSelection.delete(id);
+    }
+  }
+
+  if (!deletableSessions.length) {
+    const empty = document.createElement('li');
+    empty.className = 'empty-row';
+    empty.textContent = 'No saved recordings to delete';
+    cleanupSessionList.append(empty);
+    updateDeleteButtons();
+    return;
+  }
+
+  for (const session of deletableSessions) {
+    const row = document.createElement('li');
+    const checkbox = document.createElement('input');
+    const meta = document.createElement('div');
+    const title = document.createElement('strong');
+    const details = document.createElement('span');
+    const pathLine = document.createElement('span');
+
+    row.className = 'cleanup-item';
+    checkbox.type = 'checkbox';
+    checkbox.checked = state.cleanupSelection.has(session.id);
+    checkbox.addEventListener('change', () => {
+      if (checkbox.checked) {
+        state.cleanupSelection.add(session.id);
+      } else {
+        state.cleanupSelection.delete(session.id);
+      }
+
+      updateDeleteButtons();
+    });
+    title.textContent = session.task?.description || session.name;
+    details.textContent = `${formatDate(session.startedAt)} - ${session.counts.events} events - ${formatBytes(
+      session.counts.videoBytes
+    )}`;
+    pathLine.textContent = session.dir;
+    meta.append(title, details, pathLine);
+    row.append(checkbox, meta);
+    cleanupSessionList.append(row);
+  }
+
+  updateDeleteButtons();
 }
 
 function addStoredEvent(record) {
@@ -911,11 +1021,53 @@ function loadPlayback(detail) {
 
 async function loadSessions() {
   const sessions = await window.signalTrail.listSessions();
+  state.sessions = sessions;
   renderSessionList(sessions);
+  renderCleanupSessions(sessions);
 
   if (!state.selectedSessionId && sessions[0]) {
     await selectSession(sessions[0].id);
   }
+}
+
+async function refreshAfterDelete(response) {
+  state.sessions = response.sessions || [];
+  renderSessionList(state.sessions);
+  renderCleanupSessions(state.sessions);
+
+  if (state.selectedSessionId && !state.sessions.some((session) => session.id === state.selectedSessionId)) {
+    state.selectedSessionId = null;
+    resetPlayback();
+    clearStoredEvents();
+  }
+
+  if (!state.selectedSessionId && state.sessions[0]) {
+    await selectSession(state.sessions[0].id);
+  }
+}
+
+async function deleteSelectedSessions() {
+  const ids = [...state.cleanupSelection];
+
+  if (!ids.length || !window.confirm(`Delete ${ids.length} selected recording folder(s)? This cannot be undone.`)) {
+    return;
+  }
+
+  const response = await window.signalTrail.deleteSessions(ids);
+  state.cleanupSelection.clear();
+  await refreshAfterDelete(response);
+}
+
+async function deleteAllSessions() {
+  const count = state.sessions.filter((session) => session.status !== 'recording').length;
+
+  if (!count || !window.confirm(`Delete all ${count} saved recording folder(s)? This cannot be undone.`)) {
+    return;
+  }
+
+  const response = await window.signalTrail.deleteAllSessions();
+  state.cleanupSelection.clear();
+  await refreshAfterDelete(response);
 }
 
 async function selectSession(id) {
@@ -973,6 +1125,7 @@ async function selectSession(id) {
 }
 
 startButton.addEventListener('click', startRecording);
+topRecordButton.addEventListener('click', startRecording);
 stopButton.addEventListener('click', stopRecording);
 topStopButton.addEventListener('click', stopRecording);
 screenshotButton.addEventListener('click', () => captureScreenshot('manual'));
@@ -999,6 +1152,10 @@ videoFileButton.addEventListener('click', () => {
     window.signalTrail.revealSessionFile(state.selectedSessionId, 'video');
   }
 });
+openDataFolderButton.addEventListener('click', () => window.signalTrail.revealDataFolder());
+openDatabaseButton.addEventListener('click', () => window.signalTrail.revealDatabase());
+deleteSelectedButton.addEventListener('click', deleteSelectedSessions);
+deleteAllButton.addEventListener('click', deleteAllSessions);
 
 for (const panel of storagePanels) {
   panel.addEventListener('click', () => window.signalTrail.revealDatabase());
@@ -1014,6 +1171,8 @@ document.addEventListener('mousemove', handleMouseMove, { passive: true });
 document.addEventListener('mousedown', handleMouseAction('mousedown'), { passive: true });
 document.addEventListener('mouseup', handleMouseAction('mouseup'), { passive: true });
 document.addEventListener('click', handleMouseAction('click'), { passive: true });
+document.addEventListener('keydown', handleKeyboardAction('keydown'));
+document.addEventListener('keyup', handleKeyboardAction('keyup'));
 
 window.signalTrail.onRecorderEvent((record) => {
   if (!state.recording || !record?.type) {
@@ -1027,6 +1186,7 @@ window.signalTrail.status().then(async (status) => {
   setRecording(status.isRecording);
   databasePath.textContent = status.databasePath;
   databasePathCopy.textContent = status.databasePath;
+  settingsDataFolder.textContent = status.databasePath.replace(/\/database\.json$/, '');
 
   if (status.session) {
     sessionPath.textContent = status.session.dir;

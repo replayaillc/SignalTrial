@@ -15,9 +15,12 @@ contextBridge.exposeInMainWorld('signalTrail', {
   listSessions: () => invoke('recorder:sessions'),
   getSessionDetail: (id) => invoke('recorder:session-detail', id),
   getDatabase: () => invoke('recorder:database'),
+  deleteSessions: (ids) => invoke('recorder:delete-sessions', ids),
+  deleteAllSessions: () => invoke('recorder:delete-all-sessions'),
   revealSession: (id) => invoke('recorder:reveal-session', id),
   revealSessionFile: (id, fileKind) => invoke('recorder:reveal-session-file', id, fileKind),
   revealDatabase: () => invoke('recorder:reveal-database'),
+  revealDataFolder: () => invoke('recorder:reveal-data-folder'),
   onRecorderEvent: (callback) => {
     const listener = (_event, record) => callback(record);
     ipcRenderer.on('recorder:event-appended', listener);
