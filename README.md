@@ -16,6 +16,39 @@ SignalTrail is a minimal Electron recorder app for collecting local computer-use
 - no HTTP client dependencies
 - optional macOS packaging command
 
+## Preview
+
+![SignalTrail permission prompt](assets/screenshot1.png)
+
+![SignalTrail recording view](assets/screenshot2.png)
+
+## Privacy And Recording Behavior
+
+SignalTrail is open source and local-first. It does not include analytics, telemetry,
+or network upload code, and it does not collect information in the background.
+
+Recording only happens after you click **Record** or **Begin Recording** for a
+session. When the session is stopped, SignalTrail stops writing session events,
+video chunks, and screenshots.
+
+Session data is stored locally on your machine under:
+
+```text
+~/Library/Application Support/SignalTrail/
+```
+
+Use the Settings page to open the local data folder, reveal the database, or
+delete saved recording folders.
+
+## macOS Setup Notes
+
+When macOS asks for screen sharing, **Share Entire Screen** is preferred. This
+gives SignalTrail the cleanest video/session capture across apps and windows.
+
+For global keyboard capture, click **Open Input Monitoring** when SignalTrail
+prompts you, then enable `SignalTrail` in macOS Input Monitoring. Stop and start
+the recording again after granting permission.
+
 ## Run
 
 ```sh
@@ -100,4 +133,4 @@ On macOS:
 - Grant Screen Recording permission when prompted so the live preview and screenshots can capture the display.
 - Grant Automation permission for Electron/SignalTrail to read frontmost app and window metadata.
 - Grant browser automation permission if you want URL/title capture for Chrome, Edge, Brave, or Safari.
-- Grant Accessibility/Input Monitoring permission if you want keyboard events from other apps captured.
+- Click **Open Input Monitoring** and enable SignalTrail if you want keyboard events from other apps captured.
